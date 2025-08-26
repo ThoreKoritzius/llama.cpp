@@ -613,6 +613,7 @@ enum ggml_metal_kernel_type {
     GGML_METAL_KERNEL_TYPE_POOL_2D_AVG_F32,
     GGML_METAL_KERNEL_TYPE_POOL_2D_MAX_F32,
     GGML_METAL_KERNEL_TYPE_ARGMAX,
+    GGML_METAL_KERNEL_TYPE_LOG,
 
     GGML_METAL_KERNEL_TYPE_COUNT
 };
@@ -1643,6 +1644,7 @@ static struct ggml_backend_metal_context * ggml_metal_init(ggml_backend_dev_t de
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_ARGMAX,                          argmax,                          true);
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_POOL_2D_AVG_F32,                 pool_2d_avg_f32,                 true);
         GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_POOL_2D_MAX_F32,                 pool_2d_max_f32,                 true);
+        GGML_METAL_ADD_KERNEL(GGML_METAL_KERNEL_TYPE_LOG,                             log,                             true);
     }
 
     return ctx;
@@ -1859,8 +1861,6 @@ static bool ggml_metal_supports_op(const struct ggml_backend_metal_device_contex
         case GGML_OP_SIN:
         case GGML_OP_COS:
             return ggml_is_contiguous(op->src[0]) && op->src[0]->type == GGML_TYPE_F32;
-        case GGML_OP_LOG:
-            return false; // TODO: implement
         case GGML_OP_SUM_ROWS:
         case GGML_OP_MEAN:
         case GGML_OP_SOFT_MAX:
@@ -2902,6 +2902,20 @@ static int ggml_metal_encode_node(
                 const int64_t n = ggml_nelements(dst);
 
                 [encoder dispatchThreadgroups:MTLSizeMake(n, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+            } break;
+        case GGML_OP_LOG:
+            {
+               GGML_ASSERT(ggml_is_contiguous(src0));
+               id<MTLComputePipelineState> pipeline = ctx->kernels[GGML_METAL_KERNEL_TYPE_LOG].pipeline;
+
+                [encoder setComputePipelineState:pipeline];
+                [encoder setBuffer:id_src0 offset:offs_src0 atIndex:0];
+                [encoder setBuffer:id_dst  offset:offs_dst  atIndex:1];
+
+                const int64_t n = ggml_nelements(dst);
+
+                [encoder dispatchThreadgroups:MTLSizeMake(n, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
             } break;
         case GGML_OP_SUM_ROWS:
         case GGML_OP_MEAN:
